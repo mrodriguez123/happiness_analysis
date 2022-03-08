@@ -1,0 +1,289 @@
+---
+title: "Happiness Index: A Closer Look"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyverse)
+```
+
+## Happiness World Report
+
+This project examines datasets from different years that measure variables that have an influence on the "Happiness Index" score for different countries. It explores relationships between variables and determines which are most influential.
+
+**Data: **
+Comes from Kaggle: 
+https://www.kaggle.com/mathurinache/world-happiness-report?select=2020.csv
+https://www.kaggle.com/ajaypalsinghlo/world-happiness-report-2021
+ 
+
+The datasets of 2020 and 2021 include both the actual values for each variable (explained below) and also the extent to which each variable contributed to the calculation of the happiness score. 
+
+**Ladder score**: a national average of the responses to the main life evaluation question asked in the Gallup World Poll (GWP), which uses the Cantril Ladder - A method of ranking one’s happiness in a scale of 1 to 10.
+
+**GDP per capita**: The Logged Gross Domestic Product Divided by population
+
+**Healthy life expectancy**: The average healthy life expectancy of the general population, based on the data extracted from the World Health Organization’s (WHO) Global Health Observatory data repository
+
+**Freedom to make life choices**: The score of the individual freedoms in that country or region
+○ the national average of binary responses (1= satisfied, 2=satisfied) to the GWP question
+“Are you satisfied or dissatisfied with your freedom to choose what you do with your
+life?”
+
+**Generosity**: the residual of regressing national average in response to the GWP question “Have you donated money to a charity in the past month?” on GDP per capita.
+
+**Perceptions of corruption**: The degree to which the public views their government as corrupt. The national average of the survey responses to two questions: “Is corruption widespread throughout the government or not” and “Is corruption widespread within businesses or not?” The overall perception is just the average of the two 0-or-1 responses.
+
+
+**Read in 2020 data, Exploratory Analysis**
+
+```{r}
+data2020 <- read_csv("data/2020.csv")
+head(data2020)
+```
+**Rename the Variables**
+```{r}
+d2020 <- data2020 %>%
+  rename(ladder = "Ladder score",
+         country = "Country name",
+         life_expectancy = "Explained by: Healthy life expectancy",
+         freedom_choices = "Explained by: Freedom to make life choices",
+         generosity = "Explained by: Generosity",
+         corruption_perception = "Explained by: Perceptions of corruption",
+         GDP = "Explained by: Log GDP per capita",
+         social_support = "Explained by: Social support") %>%
+  select(country, ladder, GDP, social_support, life_expectancy, freedom_choices, generosity, corruption_perception)
+head(data2020)
+```
+
+```{r}
+data2020 <- data2020 %>%
+  rename(ladder = "Ladder score",
+         country = "Country name",
+         life_expectancy = "Healthy life expectancy",
+         freedom_choices = "Freedom to make life choices",
+         generosity = "Generosity",
+         corruption_perception = "Perceptions of corruption",
+         GDP = "Logged GDP per capita",
+         social_support = "Social support") %>%
+  select(country, ladder, GDP, social_support, life_expectancy, freedom_choices, generosity, corruption_perception)
+```
+
+**Pairs Plot To Look at the Relationships Between the variables**
+
+```{r}
+data2020 <- data2020 %>%
+  select(-country)
+pairs(data2020[,1:7])
+```
+
+This pairs plot shows the relationship and correlations between the different variables. We can see strong correlations between ladder score and other variables, such as GDP, social_support, and life_expectancy. As these three variables increase, the ladder score increases as well. 
+
+**Plot to see relationships closer**
+
+```{r}
+ggplot(data2020, aes(x = social_support, y = ladder, color = life_expectancy)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +
+    ggtitle("Relationship of Social Support and Ladder Score by Life Expectancy") +
+    xlab("Social Support") + 
+    ylab("Ladder score")
+```
+
+This graph takes a closer look at the relationship between social support (0-1.5) and ladder score(a country’s overall ranking of happiness defined by a public survey question response ranging from 0-10). The points are colored by life_expectancy, and we can see how life expectancy increases with the trend. The more social support, the higher the life expectancy, and the higher the ladder score. 
+
+```{r}
+ggplot(data2020, aes(x = social_support, y = life_expectancy)) +
+    geom_smooth(method = "lm", se = FALSE) +
+    geom_point() +
+    ggtitle("Relationship of Social Support Life Expectancy") +
+    xlab("Social Support") + 
+    ylab("Life expectancy")
+```
+
+The relationship between social support and life expectancy is also very clear, as social support increases so does life expectancy.
+
+** Linear Regression on ladders score explained by social support **
+```{r}
+lm_social_support = lm(ladder~social_support, data = data2020)
+summary(lm_social_support)
+```
+
+There is a clear relationship between social support and ladder score. The p-value for this linear regression is less than 2.2e-16, which means that there is a significant relationship. The coefficient of around 3 means that for a one unit increase in social support, there is a 3 point increase in the ladder index.
+
+Taking a closer look at the plot, the relationship between ladder score and social support might not be linear. Here, we look at a linear, squared, and cubed relationship plus an intercept term:
+
+First, divide the data into testing and training subsets to evaluate the fits:
+
+```{r}
+data2020 <- data2020 %>%
+  mutate(testSet = 0)
+n = nrow(data2020)
+# randomly select 1/4 of the data to the test set
+data2020[sample(1:nrow(data2020), size = nrow(data2020) / 4, replace = FALSE),]$testSet = 1
+train = data2020 %>% filter(testSet == 0)
+test = data2020 %>% filter(testSet == 1)
+```
+
+Training the three models with the training data: 
+```{r}
+model1 <- lm(ladder ~ 1  + social_support, data =train)
+model2 <- lm(ladder ~ 1 + I(social_support^2) , data =train)
+model3 <- lm(ladder ~ 1 + I(social_support^3), data =train)
+c( sum( model1$residuals^2 ), sum( model2$residuals^2 ), sum( model3$residuals^2 ) )
+```
+
+Using the regression models to predict the testing data, then calculating the sum of squared residuals (to measure error):
+```{r}
+probs1 <- predict(model1, type='response', newdata =  test)
+probs2 <- predict(model2, type='response', newdata =  test)
+probs3 <- predict(model3, type='response', newdata =  test)
+
+# calculating the residual sums
+test <- test %>%
+  mutate(predictions1 = probs1,
+         diff1 = ladder - predictions1,
+         RSS_sum1 = diff1^2,
+    predictions2 = probs2,
+         diff2 = ladder - predictions2,
+         RSS_sum2 = diff2^2,
+    predictions3 = probs3,
+         diff3 = ladder - predictions3,
+         RSS_sum3 = diff3^2)
+
+test %>%
+  summarise(RSS1 = sum(RSS_sum1),
+            RSS2 = sum(RSS_sum2),
+            RSS3 = sum(RSS_sum3))
+
+```
+
+
+Here we tested different fits on the social support variable to predict the ladder score. The training set consists of 115 different countries, and the testing set contains the remaining 38 observations. Predictive power is determined by the residual sum of squares of the trained model fit on the observations that were set aside for testing. For the linear fit, the residual sum of squares of the test data is around 9.75, for the squared fit it is around 9.15, and for the cubed it is around 9. This means that the cubed model fits the data the best, as it decreases the sum of the squared residuals when used to predict new data.
+
+Graphing the three model fits:
+```{r}
+intercept1 <- model1$coefficients[1]
+slope1 <- model1$coefficients[2]
+
+intercept2 <- model2$coefficients[1]
+slope2 <- model2$coefficients[2]
+
+intercept3 <- model3$coefficients[1]
+slope3 <- model3$coefficients[2]
+
+colors <- c("Linear" = "blue", "Squared" = "red", "Cubed" = "green")
+
+pp <- ggplot( data2020, aes(x=social_support, y=ladder)) + geom_point()
+pp <- pp + geom_abline(intercept=intercept1, slope=slope1, colour='blue' )
+pp <- pp + geom_line(aes(x=social_support, y=intercept2 + slope2*I(social_support^2)), colour='red' )
+pp <- pp + geom_line( aes(x=social_support, y=intercept3 + slope3*I(social_support^3)), colour='green' )
+pp <- pp + xlab("Social Support") + ylab("Ladder Score") + ggtitle("Linear, Squared, and Cubed Model Fit") + labs(color = "Legend")  
+pp <- pp + labs(color = "Legend" +   scale_color_manual(values = colors))
+pp
+
+```
+
+The cubed fit is the green line, and it is the one that decreases the sum of the residuals and therefore better predicts the ladder score. 
+
+
+
+**Reading in the 2021 data and renaming the variables**
+```{r}
+data2021 <- read_csv("data/2021.csv")
+data2021 <- data2021 %>%
+  rename(ladder = "Ladder score",
+         country = "Country name",
+         life_expectancy = "Healthy life expectancy",
+         freedom_choices = "Freedom to make life choices",
+         generosity = "Generosity",
+         corruption_perception = "Perceptions of corruption",
+         GDP = "Logged GDP per capita",
+         social_support = "Social support") %>%
+  select(country, ladder, GDP, social_support, life_expectancy, freedom_choices, generosity, corruption_perception)
+
+head(data2021)
+```
+
+
+We are going to use the 2020 data to estimate the 2021 data, using all of the variables.
+First, for a santiy check we divide the 2020 data into training and testing sets, to check the linear model as well as the residual sum of squares on the testing set. 
+
+```{r}
+data2020 <- data2020 %>%
+    mutate(year = 2020,
+         testSet = 0) %>%
+  select(ladder, GDP, social_support, life_expectancy, freedom_choices, generosity, corruption_perception, year, testSet)
+
+data2020[sample(1:nrow(data2020), size = nrow(data2020) / 4, replace = FALSE),]$testSet = 1
+
+fullData = data2020
+testSet = fullData %>% filter(testSet == 1)
+trainSet = fullData %>% filter(testSet == 0)
+```
+
+Run a regression with all of the variables on the train dataset, and use this regression to predict the values of the testing dataset. The error is compared and measured by summing the squared residuals. The social support term is cubed, as this seemed to be the best ladder score predictor for this variable.  
+
+```{r}
+lm2020 = lm(ladder ~ 1 + GDP + I(social_support^3) + life_expectancy + freedom_choices + generosity + corruption_perception, data = trainSet)
+sum(lm2020$residuals^2 )
+summary(lm2020)
+```
+Checking the predictions on the training dataset. 
+
+```{r}
+probs <- predict(lm2020, type='response', newdata =  testSet)
+testSet = testSet %>%
+  mutate(predictions = probs,
+         diff = ladder - predictions,
+         RSS = diff^2)
+#calculate RSS of train and compare to rss from test
+# comparing different number of observations, divide by n?
+testSet %>%
+  summarise(RSS_sum = sum(RSS))
+```
+The squared residual sum for the training data set was around 26.5, and for the test data set it was around 7.9. This makes sense because the training data set (115 countries) had more observations than the testing one (38 countries). The residual sum of squares are proportional to each data set, which means that the model has good predictive power.
+
+Now we can train the model using all of the data from 2020 and use this model to predict the ladder scores of 2021. We can then measure accuracy using the residual sum of squares.
+
+Predict 2021 using 2020 regression:
+```{r}
+lm_full = lm(ladder ~ 1 + GDP + I(social_support^3) + life_expectancy + freedom_choices + generosity + corruption_perception, data = data2020)
+sum(lm_full$residuals^2 )
+```
+
+Comparing the residuals from the 2020 model to its predictions on the 2021 data. 
+
+```{r}
+probs <- predict(lm_full, type='response', newdata =  data2021)
+data2021 = data2021 %>%
+  mutate(predictions = probs,
+         diff = ladder - predictions,
+         RSS = diff^2)
+#calculate RSS of 2021 and compare to rss from 2020
+data2021 %>%
+  summarise(RSS_sum = sum(RSS))
+
+```
+
+The squared sum of residuals for the model on the full 2020 data are around 34. For the same model on 2021, the SSR is around 42.2. This means that the model trained on the 2020 data has strong predictive power on the 2021 ladder scores.
+
+```{r}
+summary(lm_full)
+```
+
+This summary of the regression shows how each variable impacts the ladder happiness score for the 2020 data set. Most of the variables have a significant impact on the ladder score. Social support cubed, life expectancy, freedom to make choices, and perception of corruption all have significant p-values. This means that we can reject the null hypothesis that their coefficients are zero. The coefficient for social support cubed is 2.092766, which means that for every 2.092766 increase in social support cubed, the ladder score increases by 1. The coefficient for life expectancy is 0.041833, which means that for every increase in life expectancy of 0.041832, the ladder score increases by 1. The coefficient for  freedom to make choices is 1.477463, which means that for every 1.477463 unit increase in freedom to make choices, there is a 1 unit increase in the ladder score. Finally, the coefficient for corruption perception is -0.882609, which means that for a 0.882609 decrease in corruption perception, there is a 1 unit increase in the ladder score. 
+
+**Discussion **
+
+This project explored the impact that different variables have on the happiness ladder score. We used the data from 2020 to come up with a model, and then used this model to predict the data from 2021. The variables were associated with happiness ladder score were social support cubed, life expectancy, freedom to make choices, and perception of corruption. 
+
+The model was evaluated using the sum of residuals squared, and a different method for checking the accuracy of the model might lead to a different conclusion. Also, this project only looked at associations and how the variables how the their are correlated, casual claims cannot be made. More research is needed. 
+
+
+
+
+
+
